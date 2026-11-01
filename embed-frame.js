@@ -19,6 +19,8 @@ features: !p.has('features') ? null : (p.get('features') || '').split(',').map(s
 .map(s => s.match(/^([A-Za-z0-9]{4})(?::([01]))?$/)).filter(Boolean)
 .map(m => ({ tag: m[1], on: m[2] == null ? null : m[2] === '1' })),
 theme: p.get('theme') || '', colors: p.get('colors') || '',
+lightTheme: p.get('lighttheme') || '', lightColors: p.get('lightcolors') || '',
+darkTheme: p.get('darktheme') || '', darkColors: p.get('darkcolors') || '',
 texts: p.getAll('text'), textNames: p.getAll('textname'),
 order: p.getAll('test').map(s => s.trim().toLowerCase()).filter(Boolean),
 tests: p.has('tests') ? list('tests') : null,
@@ -1363,6 +1365,24 @@ if (!c) return;
 themeColors[isDarkHex(c.bg) ? 'dark' : 'light'] = { ...c };
 setColors(c);
 }
+function themeOf(name, colorStr) {
+const hex = (colorStr || '').split(',').map(v => '#' + v.trim().replace(/^#/, '').toLowerCase());
+if (hex.length === FIELDS.length && hex.every(hexOk)) { const c = {}; FIELDS.forEach((k, i) => { c[k] = hex[i]; }); return c; }
+const p = name && PRESET_COLORS.find(x => x.name.toLowerCase() === name.trim().toLowerCase());
+if (!p) return null;
+const c = {}; FIELDS.forEach(k => { c[k] = p[k]; }); return c;
+}
+function embedThemes(E) {
+const L = themeOf(E.lightTheme, E.lightColors), D = themeOf(E.darkTheme, E.darkColors);
+const start = E.theme.trim().toLowerCase();
+if (!L && !D && !/^(light|dark|auto)?$/.test(start) || E.colors) { embedTheme(E.theme, E.colors); return; }
+if (L) themeColors.light = L;
+if (D) themeColors.dark = D;
+const sysDark = () => !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+const mode = start === 'dark' ? 'dark' : start === 'auto' ? (sysDark() ? 'dark' : 'light') : 'light';
+forceDark(mode === 'dark');
+paint(themeColors[mode]);
+}
 function embedText(text, name) {
 if (!text) return;
 const t = cleanTest({ name: name || 'Sample', text });
@@ -1388,7 +1408,7 @@ list = [...own, ...base.filter(t => !own.some(o => lc(o.name) === lc(t.name)))];
 tests = list;
 if (tests[0]) showTest(tests[0]);
 else { activeTest = null; showPlain(testBox, ''); renderTests(); updateAbout(); }
-embedTheme(E.theme, E.colors);
+embedThemes(E);
 if (E.size != null) { sizeIn.value = E.size; sizeIn.dispatchEvent(new Event('input')); }
 if (E.lh != null) { heightIn.value = E.lh; heightIn.dispatchEvent(new Event('input')); }
 if (/^(left|right|center|justify)$/.test(E.align)) $('#al' + E.align).click();

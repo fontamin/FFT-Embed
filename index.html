@@ -58,6 +58,7 @@
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
   .colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
   .colors label { font-size: .8rem; color: var(--muted); }
+  .colors .cap { grid-column: 1 / -1; margin: 0; font-weight: 600; color: var(--text); }
   .colors input { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: none; padding: 2px; }
   /* sliders: the same as FFT's (thin track, pill thumb in the accent color with the value inside) */
   .font-slider { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
@@ -144,6 +145,10 @@
   .import textarea { min-height: 110px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-bottom: 8px; }
   .import .hint.err { color: var(--accent); }
   .tip { margin-top: 8px; }
+  .drow .b64 { margin-inline-start: 2px; }
+  .disclaimer { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-bg); color: var(--text); font-size: .82rem; }
+  .disclaimer strong { display: block; color: var(--accent); margin-bottom: 2px; }
+  .disclaimer p { margin: 0; }
   .linkbtn { font: inherit; border: 0; padding: 0; background: none; color: var(--accent); cursor: pointer; text-decoration: underline; }
   .session { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--bg); font-size: .85rem; }
   .session[hidden] { display: none; }
@@ -185,6 +190,11 @@
         <input type="url" id="url" dir="ltr" placeholder="or a URL: https://example.com/fonts/MyFont.woff2" aria-label="Font URL">
         <button type="button" class="btn" id="addurl">Add</button>
       </div>
+      <div class="disclaimer" id="b64note" hidden role="note">
+        <strong>Disclaimer</strong>
+        <p>Base64 can be decoded: a font put in the code this way is not protected from being copied. If your font is commercial and this is a concern, use a version made for testing (for example a subset or a demo version).</p>
+      </div>
+      <p class="hint" id="filehint" hidden>Chosen files are only used in the preview. Press “Add as Base64” to put a file in the code, or upload it to your site and add its URL instead.</p>
       <p class="hint" id="urlhint" hidden>The preview downloads URL fonts from this page. If one fails here (CORS), it can still work on your site when the font is on the same domain as the page.</p>
       <p class="hint">The Font tab lists these fonts in this order (drag the handle), with the names you give them (empty = the font’s own name). The first one is shown at start.</p>
     </fieldset>
@@ -233,8 +243,19 @@
 
     <fieldset>
       <legend>Theme</legend>
-      <select id="theme"></select>
-      <div class="colors" id="colors" hidden></div>
+      <label>Starts in
+        <select id="tstart">
+          <option value="auto">The visitor’s system setting</option>
+          <option value="light">Light mode</option>
+          <option value="dark">Dark mode</option>
+        </select>
+      </label>
+      <div class="row">
+        <label>Light mode<select id="tlight"></select></label>
+        <label>Dark mode<select id="tdark"></select></label>
+      </div>
+      <div class="colors" id="clight" hidden aria-label="Light mode colors"></div>
+      <div class="colors" id="cdark" hidden aria-label="Dark mode colors"></div>
       <label class="check"><input type="checkbox" id="themetoggle" checked> Show the dark-mode button</label>
       <label class="check"><input type="checkbox" id="fontname" checked> Show the font name above the text</label>
       <label class="check"><input type="checkbox" id="info" checked> Show the info line (font details, CSS) at the bottom</label>
@@ -439,7 +460,7 @@
       Object.keys(el.dataset).forEach(k => { if (k !== 'fft' && k !== 'fftDone') r.opt[k.toLowerCase()] = el.dataset[k]; });
       el.querySelectorAll('template[data-fft-font]').forEach(t => {
         const url = t.getAttribute('data-url'), label = t.getAttribute('data-label') || '';
-        r.fonts.push(url ? { url, label } : { b64: t.content.textContent.replace(/\s+/g, ''), name: t.getAttribute('data-name') || 'Font', label });
+        r.fonts.push(url ? { url, label } : { b64: t.content.textContent.replace(/\s+/g, ''), name: t.getAttribute('data-name') || 'Font', label, previewOnly: t.hasAttribute('data-preview-only') });
       });
       const labels = bars(r.opt.label);
       bars(r.opt.font).forEach((u, i) => { if (u) r.fonts.push({ url: u, label: labels[i] || '' }); });
@@ -496,7 +517,7 @@
     fonts.splice(0, fonts.length);
     r.fonts.forEach(f => {
       if (f.url) { fonts.push({ kind: 'url', url: f.url, label: f.label }); return; }
-      try { const buf = b64buf(f.b64); fonts.push({ kind: 'file', name: f.name, buf, b64: f.b64, label: f.label }); } catch (e) { bad++; }
+      try { const buf = b64buf(f.b64); fonts.push({ kind: 'file', name: f.name, buf, b64: f.b64, label: f.label, inCode: !f.previewOnly }); } catch (e) { bad++; }
     });
     // tests: the order list, then what is left (turned off)
     const lc = x => x.trim().toLowerCase();
@@ -529,14 +550,25 @@
     } else { $('#featmode').value = 'auto'; featTouched = false; }
     $('#featmode').dispatchEvent(new Event('change'));
     renderFeatRows();
-    const cols = String(o.colors || '').split(',').map(x => '#' + x.trim().replace(/^#/, ''));
-    if (cols.length === FIELDS.length && cols.every(c => /^#[0-9a-f]{6}$/i.test(c))) {
-      $('#theme').value = 'custom';
-      FIELDS.forEach(([k], i) => { $('#c-' + k).value = cols[i].toLowerCase(); });
-    } else {
-      const t = [...$('#theme').options].find(op => op.value.toLowerCase() === String(o.theme || 'light').toLowerCase());
-      $('#theme').value = t ? t.value : 'Light';
+    // themes: lighttheme / darktheme (or 6 colors each) + theme = which mode starts; older codes had one theme
+    const sixColors = v => { const c = String(v || '').split(',').map(x => '#' + x.trim().replace(/^#/, '').toLowerCase()); return c.length === FIELDS.length && c.every(x => /^#[0-9a-f]{6}$/.test(x)) ? c : null; };
+    const preset = (m, v) => MODE_THEMES[m].find(n => n.toLowerCase() === String(v || '').trim().toLowerCase());
+    const setMode = (m, name, cols) => {
+      if (cols) { $('#t' + m).value = 'custom'; FIELDS.forEach(([k], i) => { $(`#c-${m}-${k}`).value = cols[i]; }); }
+      else $('#t' + m).value = name || MODE_THEMES[m][0];
+    };
+    const darkBg = hex => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) < 128; };
+    const start = String(o.theme || 'light').trim().toLowerCase();
+    setMode('light', preset('light', o.lighttheme), sixColors(o.lightcolors));
+    setMode('dark', preset('dark', o.darktheme), sixColors(o.darkcolors));
+    if (/^(light|dark|auto)$/.test(start)) $('#tstart').value = start;
+    else {   // older codes: theme=Ocean (a preset) starts in that preset's mode
+      const m = preset('dark', start) ? 'dark' : 'light';
+      setMode(m, preset(m, start), null);
+      $('#tstart').value = m;
     }
+    const old = sixColors(o.colors);   // older codes: colors=… for the mode of its background
+    if (old) { const m = darkBg(old[1]) ? 'dark' : 'light'; setMode(m, null, old); $('#tstart').value = m; }
     $('#size').value = isFinite(+o.size) && o.size !== undefined ? o.size : 26;
     $('#lh').value = isFinite(+o.lh) && o.lh !== undefined ? o.lh : 1.5;
     $('#align').value = ['left', 'right', 'center', 'justify'].includes(String(o.align || '').toLowerCase()) ? o.align.toLowerCase() : '';
@@ -562,7 +594,7 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       const kind = document.querySelector('[name=kind]:checked').value;
-      const full = codeScript(options(), true);
+      const full = codeScript(options(), true, true);
       try { localStorage.setItem(SAVE_KEY, JSON.stringify({ code: full, kind, files: true })); }
       catch (e) {
         // too big for the browser's storage (font files): keep everything but the font files
@@ -668,11 +700,16 @@
     }
     return String.fromCodePoint(...out);
   }
-  $('#theme').add(new Option('Follow the visitor’s system', 'auto'));
-  Object.keys(THEMES).forEach(n => $('#theme').add(new Option(n, n)));
-  $('#theme').add(new Option('Custom colors…', 'custom'));
-  FIELDS.forEach(([k, t], i) => {
-    $('#colors').insertAdjacentHTML('beforeend', `<label>${t}<input type="color" id="c-${k}" value="#${THEMES.Light[i]}"></label>`);
+  // the presets of each mode, and 6 color pickers per mode for "Custom colors…"
+  const MODE_THEMES = { light: ['Light', 'Material', 'Yellow', 'Mint'], dark: ['Dark', 'Night', 'Ocean', 'Terminal'] };
+  ['light', 'dark'].forEach(m => {
+    const sel = $('#t' + m), box = $('#c' + m);
+    MODE_THEMES[m].forEach(n => sel.add(new Option(n, n)));
+    sel.add(new Option('Custom colors…', 'custom'));
+    box.insertAdjacentHTML('beforeend', `<p class="hint cap">${m === 'light' ? 'Light' : 'Dark'} mode colors</p>`);
+    FIELDS.forEach(([k, t], i) => {
+      box.insertAdjacentHTML('beforeend', `<label>${t}<input type="color" id="c-${m}-${k}" value="#${THEMES[MODE_THEMES[m][0]][i]}"></label>`);
+    });
   });
   $('#base').value = location.href.replace(/[^\/]*([?#].*)?$/, '');
 
@@ -762,7 +799,16 @@
       const row = document.createElement('div');
       row.className = 'drow'; row.dataset.i = i;
       row.innerHTML = handleHtml + '<div class="main"><input type="text" dir="auto" placeholder="The font’s own name" aria-label="Name in the Font tab">'
-        + '<span class="sub src"></span></div><button type="button" class="del" title="Remove" aria-label="Remove">' + ICON.del + '</button>';
+        + '<span class="sub src"></span></div>'
+        + (f.kind === 'file' ? '<button type="button" class="state b64" title="Put this font file in the code, as Base64"></button>' : '')
+        + '<button type="button" class="del" title="Remove" aria-label="Remove">' + ICON.del + '</button>';
+      if (f.kind === 'file') {
+        // a chosen file is only used in the preview, unless it is put in the code (Base64)
+        const b = row.querySelector('.b64');
+        const paint = () => { b.textContent = f.inCode ? 'In code (Base64)' : 'Add as Base64'; b.setAttribute('aria-pressed', String(!!f.inCode)); b.setAttribute('aria-label', f.name + ': ' + (f.inCode ? 'in the code as Base64' : 'only in the preview')); };
+        paint();
+        b.addEventListener('click', () => { f.inCode = !f.inCode; paint(); update(); });
+      }
       const inp = row.querySelector('input');
       inp.value = f.label || '';
       inp.addEventListener('input', () => { f.label = inp.value.trim(); update(); });
@@ -779,7 +825,7 @@
     for (const file of e.target.files) {
       if (!/\.(ttf|otf|woff2?)$/i.test(file.name)) continue;
       const buf = await file.arrayBuffer();
-      fonts.push({ kind: 'file', name: file.name, buf, b64: toB64(buf), label: '' });
+      fonts.push({ kind: 'file', name: file.name, buf, b64: toB64(buf), label: '', inCode: false });   // preview only until put in the code
     }
     e.target.value = '';
     renderFonts();
@@ -817,9 +863,12 @@
       o.test = on.length ? on : ['none'];   // "none" = an empty Test tab (no test param at all would mean the defaults)
     }
     if (!$('#edit').checked) o.edit = '0';
-    const th = $('#theme').value;
-    if (th === 'custom') o.colors = FIELDS.map(([k]) => $('#c-' + k).value.slice(1)).join(',');
-    else if (th !== 'Light') o.theme = th;
+    if ($('#tstart').value !== 'light') o.theme = $('#tstart').value;
+    ['light', 'dark'].forEach(m => {
+      const v = $('#t' + m).value;
+      if (v === 'custom') o[m + 'colors'] = FIELDS.map(([k]) => $(`#c-${m}-${k}`).value.slice(1)).join(',');
+      else if (v !== MODE_THEMES[m][0]) o[m + 'theme'] = v;
+    });
     if (!$('#themetoggle').checked) o.themetoggle = '0';
     if (!$('#fontname').checked) o.fontname = '0';
     if (!$('#info').checked) o.info = '0';
@@ -847,9 +896,11 @@
   const base = () => { let b = $('#base').value.trim(); if (b && !b.endsWith('/')) b += '/'; return b; };
 
   // full = the code to copy; the screen shows base64 data shortened
-  function codeScript(o, full) {
+  // full = the code to copy (the screen shows Base64 data shortened); forSave = also the "preview only" files, marked
+  function codeScript(o, full, forSave) {
     const attrs = ['data-fft'];
-    const urls = fonts.some(f => f.kind === 'file') ? [] : fonts;   // with files, every font is a <template>, in the chosen order
+    const list = forSave ? fonts : fonts.filter(f => f.kind === 'url' || f.inCode);
+    const urls = list.some(f => f.kind === 'file') ? [] : list;   // with files, every font is a <template>, in the chosen order
     if (urls.length) {
       attrs.push(`data-font="${esc(urls.map(f => f.url).join(' | '))}"`);
       if (urls.some(f => f.label)) attrs.push(`data-label="${esc(urls.map(f => f.label || '').join(' | '))}"`);
@@ -861,10 +912,10 @@
     if (fixedW()) { attrs.push(`data-width="${fixedW()}"`); if ($('#walign').value) attrs.push(`data-position="${$('#walign').value}"`); }
     attrs.push(`data-height="${height()}"`);
     let html = '<div ' + attrs.join('\n     ') + '>';
-    if (!urls.length) fonts.forEach(f => {
+    if (!urls.length) list.forEach(f => {
       if (f.kind === 'url') { html += `\n  <template data-fft-font data-url="${esc(f.url)}"${f.label ? ` data-label="${esc(f.label)}"` : ''}></template>`; return; }
       const data = full ? f.b64 : f.b64.slice(0, 40) + '… (' + kb(f.b64.length) + ' of font data, copied in full)';
-      html += `\n  <template data-fft-font data-name="${esc(f.name)}"${f.label ? ` data-label="${esc(f.label)}"` : ''}>${data}</template>`;
+      html += `\n  <template data-fft-font data-name="${esc(f.name)}"${f.label ? ` data-label="${esc(f.label)}"` : ''}${f.inCode ? '' : ' data-preview-only'}>${data}</template>`;
     });
     (o.text || []).forEach((t, i) => { html += `\n  <template data-fft-text data-name="${esc(o.textname[i])}">${esc(t)}</template>`; });
     if (html.includes('<template')) html += '\n';
@@ -889,6 +940,7 @@
     });
   }
   window.addEventListener('resize', placeValues);
+  const FRAME = 'embed-frame.html?v=1.0-ed7179a4';   // the version is written by build-embed.mjs (a new one = not taken from the cache)
   let timer = 0, lastHash = '', lastOpen = '', openChanged = false;
   let previewTab = '';   // the tab open in the preview, as it reports it
   window.addEventListener('message', e => {
@@ -896,9 +948,12 @@
     if (f && e.source === f.contentWindow && e.data && e.data.fft === 'tab' && typeof e.data.tab === 'string') previewTab = e.data.tab;
   });
   function update() {
-    $('#colors').hidden = $('#theme').value !== 'custom';
+    $('#clight').hidden = $('#tlight').value !== 'custom';
+    $('#cdark').hidden = $('#tdark').value !== 'custom';
     $('#wfixed').hidden = $('#wmode').value !== 'fixed';
     $('#urlhint').hidden = !fonts.some(f => f.kind === 'url');
+    $('#b64note').hidden = !fonts.some(f => f.kind === 'file' && f.inCode);
+    $('#filehint').hidden = !fonts.some(f => f.kind === 'file' && !f.inCode);
     $('#onefont').hidden = !(fonts.length === 1 && $('#tabs-font').checked);
     $('#whint').textContent = $('#wmode').value === 'fixed'
       ? 'Never wider than its container: on a narrow screen it shrinks to fit.'
@@ -914,14 +969,15 @@
     const script = document.querySelector('[name=kind]:checked').value === 'script';
     $('#code').textContent = script ? codeScript(o, false) : codeIframe(o);
     $('#kindhint').textContent = script
-      ? 'Paste where the tester should appear. Your page downloads the font URLs itself, so fonts on your own site need no extra server setup and relative addresses work. Chosen files are inside the code; for big files, upload them to your site and add their URLs instead.'
+      ? 'Paste where the tester should appear. Your page downloads the font URLs itself, so fonts on your own site need no extra server setup and relative addresses work. Font files you put in the code (Base64) are inside it; for big files, upload them to your site and add their URLs instead.'
       : 'For site builders that block scripts. Here the tester downloads the fonts, so their server must allow CORS, and chosen files can’t be used.';
     const warn = [];
     if (!fonts.length) warn.push('Add at least one font.');
+    else if (!fonts.some(f => f.kind === 'url' || f.inCode)) warn.push('No font is in the code yet: your fonts are only in the preview.');
     if (!testList.some(t => t.on)) warn.push('No test is checked: the Test tab will be empty.');
-    if (!script && fonts.some(f => f.kind === 'file')) warn.push('Font files work only with the Script code: switch to it, or use URLs.');
+    if (!script && fonts.some(f => f.kind === 'file' && f.inCode)) warn.push('Font files work only with the Script code: switch to it, or use URLs.');
     if (!script && fonts.some(f => f.kind === 'url' && !/^https?:\/\//i.test(f.url))) warn.push('In an iframe, font addresses must be full https:// URLs.');
-    const bytes = fonts.reduce((n, f) => n + (f.b64 ? f.b64.length : 0), 0);
+    const bytes = fonts.reduce((n, f) => n + (f.b64 && f.inCode ? f.b64.length : 0), 0);
     if (script && bytes > 600 * 1024) warn.push('The font files add ' + kb(bytes) + ' to your page. Using woff2 files or URLs keeps it light.');
     $('#warn').hidden = !warn.length; $('#warn').textContent = warn.join(' ');
 
@@ -943,7 +999,7 @@
       f.title = 'Preview of the embedded font tester';
       f.allow = 'clipboard-write';
       f.style.cssText = frameCss();
-      f.src = 'embed-frame.html#' + ph + '&debug=1';   // debug: the preview shows the technical font errors
+      f.src = FRAME + '#' + ph + '&debug=1';   // debug: the preview shows the technical font errors
       $('#preview').replaceChildren(f);
     }, 350);
   }
