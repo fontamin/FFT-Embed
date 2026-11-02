@@ -31,7 +31,7 @@ jobs:
         # a missing file stops the deployment, so a half site never goes online
         run: |
           mkdir _site
-          cp index.html embed.js embed-frame.html embed-frame.css embed-frame.js _site/
+          cp index.html embed.js embed-frame.html embed-frame.css embed-frame.js brotli.js _site/
 
       - name: Set up Pages
         uses: actions/configure-pages@v6

@@ -28,6 +28,7 @@ size: num('size'), lh: num('lh'), align: (p.get('align') || '').toLowerCase(),
 scale: num('scale'), rows: num('rows')
 };
 })();
+let embedFontFailed = false;
 const localStorage = EMBED ? (() => {
 const m = {};
 Object.defineProperties(m, {
@@ -123,6 +124,16 @@ const HIDDEN = new Set(['ccmp','locl','rlig','rvrn','abvm','blwm','abvs','blws',
 'cjct','vatu','abvf','rkrf','ljmo','vjmo','tjmo','dtls','ltra','ltrm','rtla','rtlm','stch','rand']);
 const DEFAULT_ON = new Set([...HIDDEN, 'kern','liga','clig','calt','rclt','mark','mkmk','curs','dist']);
 const BROTLI = (() => { try { new DecompressionStream('brotli'); return true; } catch (e) { return false; } })();
+const BROTLI_SRC = 'brotli.js?v=1.0-c4b865ec';
+let brotliLoad = null;
+const loadBrotli = () => brotliLoad || (brotliLoad = new Promise((ok, fail) => {
+if (window.BrotliDecode) { ok(window.BrotliDecode); return; }
+const sc = document.createElement('script');
+sc.src = BROTLI_SRC;
+sc.onload = () => window.BrotliDecode ? ok(window.BrotliDecode) : fail(new Error('no BrotliDecode'));
+sc.onerror = () => { brotliLoad = null; fail(new Error('brotli.js not loaded')); };
+document.head.appendChild(sc);
+}));
 const COMMON = ['kern','liga','calt','clig','dlig','smcp','c2sc','onum','lnum','pnum','tnum',
 'frac','zero','sups','subs','ss01','ss02','ss03'];
 const CHIP_MAX = 30;
@@ -242,7 +253,12 @@ function buildAxes() {
 axesBox.textContent = '';
 Object.keys(axisVals).forEach(k => delete axisVals[k]);
 diceBtn.style.display = info.axes.length ? '' : 'none';
-if (!info.axes.length) { hint(axesBox, 'No variable axes in this font'); updateBubbles(); return; }
+if (!info.axes.length) {
+hint(axesBox, embedFontFailed && info.generic ? 'The font couldn’t be loaded.'
+: info.noBrotli ? 'This browser can’t read the axes of a woff2 font. Use the woff, ttf or otf version of the font.'
+: info.generic ? 'The axes of this font couldn’t be read' : 'No variable axes in this font');
+updateBubbles(); return;
+}
 info.axes.forEach(a => {
 const step = (a.max - a.min) > 10 ? 1 : 0.01;
 const g = axisGlobal[a.tag];
@@ -414,6 +430,11 @@ const W2TAGS = ['cmap','head','hhea','hmtx','maxp','name','OS/2','post','cvt ','
 'Silf','Glat','Gloc','Feat','Sill'];
 const tag4 = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
 async function inflate(u8, fmt) {
+if (fmt === 'brotli' && !BROTLI) {
+const dec = await loadBrotli();
+const out = dec(new Int8Array(u8.buffer, u8.byteOffset, u8.byteLength));
+return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+}
 const s = new Blob([u8]).stream().pipeThrough(new DecompressionStream(fmt));
 return new Uint8Array(await new Response(s).arrayBuffer());
 }
@@ -791,11 +812,12 @@ async function makeFace(buf, fileName) {
 const family = 'TestFont' + (++counter);
 const face = new FontFace(family, buf.slice(0));
 await face.load();
-let parsed = null, note = '';
+let parsed = null, note = '', noBrotli = false;
 try { parsed = await parseFont(buf); }
 catch (e) {
 const woff2 = tag4(new DataView(buf), 0) === 'wOF2';
-note = woff2 && !BROTLI
+noBrotli = woff2 && !BROTLI && !window.BrotliDecode;
+note = noBrotli
 ? ' — this browser can\'t decode woff2 (no Brotli): generic features shown, use ttf/otf/woff for the real list'
 : ' — could not read font tables, showing generic features';
 }
@@ -807,7 +829,7 @@ family, css: `"${family}", sans-serif`, face, file: fileName, name, version,
 metrics: measureMetrics(`"${family}"`, parsed && parsed.tab),
 info: parsed
 ? { axes: parsed.axes, instances: parsed.instances, features: parsed.features, chars: parsed.chars, extra: parsed.extra, bases: parsed.bases, gids: parsed.gids, names: parsed.names }
-: { generic: true, axes: [], features: COMMON },
+: { generic: true, axes: [], features: COMMON, noBrotli },
 status: parsed
 ? `${name}${version ? ' v' + version : ''}: ${parsed.axes.length} axes, ${parsed.features.length} features`
 : `${name}${note}`
@@ -1436,6 +1458,7 @@ if (rec) { n++; if (!first) first = rec; } else { failed++; err = (f.label || f.
 }
 if (first) activate(first);
 if (failed) setStatus(EMBED.debug ? err : n ? 'Some fonts couldn’t be loaded.' : 'The font couldn’t be loaded.');
+if (failed && !n) { embedFontFailed = true; buildAxes(); }
 document.documentElement.classList.remove('fft-wait');
 post({ fft: 'ready', fonts: n });
 postFeatures();

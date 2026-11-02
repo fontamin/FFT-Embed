@@ -1,11 +1,12 @@
-# FFT embed
+# FFT-Embed
 
 Put a short, live preview of **your own fonts** on your website, made with [Fontamin Font Tester](https://github.com/fontamin/FFT).
 
 **Make your code here: <https://fft-embed.fontamin.com>**
 
-Choose your font files (or give their URLs), pick the tabs, tests, OpenType features and theme, watch the live preview,
-then copy the code into your page. To change an embed later, paste its code into **Edit an existing embed** at the top
+Choose your font files (or give their URLs), pick the tabs, tests, OpenType features and the light and dark themes,
+watch the live preview, then copy the code into your page. A chosen font file is only used in the preview until you
+press **Add as Base64**; then it is inside the code. To change an embed later, paste its code into **Edit an existing embed** at the top
 of the page. The page also keeps your last settings in your browser (**Start over** clears them).
 
 ## What visitors get
@@ -68,8 +69,10 @@ With the script they are `data-` attributes (`data-theme="Ocean"`); in an iframe
 | `test` | the Test tab, in order, by name (your tests and built-in ones); repeat it (script: `data-tests="A \| B"`). `none` = an empty Test tab | your tests, then the built-in ones |
 | `edit` | `0` = the text can't be edited | `1` |
 | `features` | the OpenType tab shows only these features: `liga,kern:0,ss01:1` (`:1` / `:0` = on / off at start); `none` = no features | each font's own features |
-| `theme` | `auto` (the visitor's system), `Light, Material, Yellow, Mint, Dark, Night, Ocean, Terminal` | `Light` |
-| `colors` | 6 hex colors without `#`: text,bg,accent,footer,chip,box (instead of `theme`) | — |
+| `theme` | which mode starts: `light`, `dark` or `auto` (the visitor's system setting) | `light` |
+| `lighttheme` | the light mode: `Light, Material, Yellow, Mint` | `Light` |
+| `darktheme` | the dark mode: `Dark, Night, Ocean, Terminal` | `Dark` |
+| `lightcolors`, `darkcolors` | 6 hex colors without `#` (text,bg,accent,footer,chip,box), instead of a preset | — |
 | `themetoggle` | `0` = no dark-mode button | `1` |
 | `fontname` | `0` = no font name above the text | `1` |
 | `info` | `0` = no info line (font details, CSS) at the bottom | `1` |
@@ -97,8 +100,11 @@ frame.contentWindow.postMessage({ fft: 'size', value: 48 }, '*');
 ## Notes
 
 - Everything a visitor changes in the tester lives only until the page is closed; nothing is saved anywhere.
+- woff2 fonts work everywhere: browsers that can't decode their tables themselves get `brotli.js` (about 180 KB, once).
 - If a font can't be loaded, visitors see "The font couldn’t be loaded."; the builder's preview shows the reason (CORS, wrong URL, not a font file).
-- Fonts inside the code (base64) are about a third bigger than the file. For large fonts, use woff2, or put the file on your site and give its URL.
+- **Disclaimer:** Base64 can be decoded: a font put in the code this way is not protected from being copied. If your font is commercial and this is a concern, use a version made for testing (for example a subset or a demo version).
+- Fonts inside the code (Base64) are about a third bigger than the file. For large fonts, use woff2, or put the file on your site and give its URL.
+- Older codes with one `theme` (a preset name such as `Ocean`) or `colors` still work: that theme is used for its mode and starts.
 
 ## Files in this repository
 
@@ -107,11 +113,12 @@ frame.contentWindow.postMessage({ fft: 'size', value: 48 }, '*');
 | `index.html` | the builder (the page that makes the code) |
 | `embed.js` | the loader that the script code points to |
 | `embed-frame.html`, `embed-frame.css`, `embed-frame.js` | the tester inside the frame |
+| `brotli.js` | Google's Brotli decoder ([google/brotli](https://github.com/google/brotli), MIT), loaded only by browsers that can't decode woff2 tables themselves (e.g. Chrome on Android) |
 
-The three `embed-frame` files are **built** from the full app in the [FFT repository](https://github.com/fontamin/FFT):
-there, run `node build-embed.mjs`, then copy `embed-frame.html`, `embed-frame.css` and `embed-frame.js` here.
+The three `embed-frame` files and `brotli.js` are **built** from the full app in the [FFT repository](https://github.com/fontamin/FFT):
+there, run `node embed/build-embed.mjs`, then copy `embed-frame.html`, `embed-frame.css`, `embed-frame.js` and `brotli.js` here.
 Change them in FFT, not here. `embed.js` and `index.html` (`embed-builder.html` in FFT) are edited in FFT too and copied here.
 
 ## License
 
-[MIT](LICENSE) © fontamin
+[MIT](LICENSE) © fontamin. `brotli.js` is © Google, MIT (its license is at the top of the file).
